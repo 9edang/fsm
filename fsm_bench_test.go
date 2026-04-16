@@ -2,6 +2,7 @@ package fsm_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/9edang/fsm"
@@ -102,5 +103,62 @@ func BenchmarkCan(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = m.Can("start")
+	}
+}
+
+// buildLargeFSM creates an FSM with many transitions to demonstrate O(1) index performance.
+func buildLargeFSM(b *testing.B, numStates int) *fsm.FSM {
+	b.Helper()
+	builder := fsm.New(fsm.State("state_0"))
+	
+	// Create a chain: state_0 → state_1 → ... → state_N
+	for i := 0; i < numStates-1; i++ {
+		from := fsm.State(fmt.Sprintf("state_%d", i))
+		to := fsm.State(fmt.Sprintf("state_%d", i+1))
+		event := fsm.Event(fmt.Sprintf("next_%d", i))
+		builder.On(event).From(from).To(to)
+	}
+	
+	m, err := builder.Build()
+	if err != nil {
+		b.Fatal(err)
+	}
+	return m
+}
+
+// BenchmarkTrigger_LargeFSM_FirstTransition measures performance when triggering
+// the first transition in a large FSM (best case for O(1) index).
+func BenchmarkTrigger_LargeFSM_FirstTransition(b *testing.B) {
+	ctx := context.Background()
+	template := buildLargeFSM(b, 100)
+	
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m := fsm.NewWithState(template, "state_0")
+		_ = m.Trigger(ctx, "next_0")
+	}
+}
+
+// BenchmarkTrigger_LargeFSM_LastTransition measures performance when triggering
+// the last transition in a large FSM (worst case for linear search, best for index).
+func BenchmarkTrigger_LargeFSM_LastTransition(b *testing.B) {
+	ctx := context.Background()
+	template := buildLargeFSM(b, 100)
+	
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m := fsm.NewWithState(template, "state_98")
+		_ = m.Trigger(ctx, "next_98")
+	}
+}
+
+// BenchmarkCan_LargeFSM measures Can() performance with many transitions.
+func BenchmarkCan_LargeFSM(b *testing.B) {
+	m := buildLargeFSM(b, 100)
+	m = fsm.NewWithState(m, "state_50")
+	
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = m.Can("next_50")
 	}
 }

@@ -344,27 +344,33 @@ Verified clean with `go test -race ./...`.
 
 ## Benchmarks
 
-Run with `go test -bench=. -benchmem -benchtime=3s ./...` on Go 1.23.0 · linux/amd64 · Intel Core i5-1334U.
+Run with `go test -bench=. -benchmem -benchtime=2s ./...` on Go 1.23.0 · linux/amd64 · Intel Core i5-1334U.
 
 ```bash
 goos: linux
 goarch: amd64
 pkg: github.com/9edang/fsm
 cpu: 13th Gen Intel(R) Core(TM) i5-1334U
-BenchmarkTrigger_HotPath-12                  21164337     156.2 ns/op    64 B/op    1 allocs/op
-BenchmarkTrigger_WithGuardAndAction-12       23318056     152.6 ns/op    64 B/op    1 allocs/op
-BenchmarkTrigger_WithHooks-12               19990898     168.7 ns/op    64 B/op    1 allocs/op
-BenchmarkTrigger_Parallel-12                45491026      69.97 ns/op   64 B/op    1 allocs/op
-BenchmarkCan-12                            113263990      29.23 ns/op    0 B/op    0 allocs/op
+BenchmarkTrigger_HotPath-12                             17710795               123.4 ns/op            64 B/op          1 allocs/op
+BenchmarkTrigger_WithGuardAndAction-12                  17924708               122.5 ns/op            64 B/op          1 allocs/op
+BenchmarkTrigger_WithHooks-12                           17782305               127.5 ns/op            64 B/op          1 allocs/op
+BenchmarkTrigger_Parallel-12                            55667827                51.52 ns/op           64 B/op          1 allocs/op
+BenchmarkCan-12                                         80790651                29.26 ns/op            0 B/op          0 allocs/op
+BenchmarkTrigger_LargeFSM_FirstTransition-12            15176062               132.5 ns/op            64 B/op          1 allocs/op
+BenchmarkTrigger_LargeFSM_LastTransition-12             16100187               136.3 ns/op            64 B/op          1 allocs/op
+BenchmarkCan_LargeFSM-12                                68472742                35.90 ns/op            0 B/op          0 allocs/op
 ```
 
 | Benchmark | ns/op | B/op | allocs/op | Notes |
 |---|---|---|---|---|
-| `Trigger` hot path | 156 | 64 | 1 | No guards, actions, or hooks |
-| `Trigger` + guard + action | 153 | 64 | 1 | One no-op guard + one no-op action |
-| `Trigger` + all hooks | 169 | 64 | 1 | Before/After/OnEnter/OnExit all registered |
-| `Trigger` parallel (12 CPU) | 70 | 64 | 1 | Each goroutine owns its FSM instance |
+| `Trigger` hot path | 123 | 64 | 1 | No guards, actions, or hooks |
+| `Trigger` + guard + action | 123 | 64 | 1 | One no-op guard + one no-op action |
+| `Trigger` + all hooks | 128 | 64 | 1 | Before/After/OnEnter/OnExit all registered |
+| `Trigger` parallel (12 CPU) | 52 | 64 | 1 | Each goroutine owns its FSM instance |
 | `Can` (read-only) | 29 | 0 | 0 | Zero allocations |
+| `Trigger` large FSM (100 states) first | 133 | 64 | 1 | First transition in 100-state chain |
+| `Trigger` large FSM (100 states) last | 136 | 64 | 1 | Last transition (only 2.3% slower) ✅ |
+| `Can` large FSM | 36 | 0 | 0 | O(1) regardless of FSM size |
 
 The single allocation per `Trigger` comes from `NewWithState` allocating the FSM struct on the heap. The `Trigger` execution path itself is allocation-free.
 

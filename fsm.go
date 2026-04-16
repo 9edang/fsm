@@ -26,6 +26,9 @@ type definition struct {
 	transitions []*transitionDef
 	hooks       *hooks
 	withHistory bool
+	// index maps event → state → transition for O(1) lookup.
+	// Built once during Build() and immutable thereafter.
+	index map[Event]map[State]*transitionDef
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +68,7 @@ func (b *Builder) Build() (*FSM, error) {
 		transitions: b.transitions,
 		hooks:       b.hooks,
 		withHistory: b.withHistory,
+		index:       buildTransitionIndex(b.transitions),
 	}
 	f := &FSM{current: def.initial, def: def}
 	if def.withHistory {
@@ -99,6 +103,21 @@ func validateBuilder(b *Builder) error {
 		}
 	}
 	return nil
+}
+
+// buildTransitionIndex constructs a map[Event]map[State]*transitionDef for O(1) lookups.
+// Called once during Build(); the result is immutable.
+func buildTransitionIndex(transitions []*transitionDef) map[Event]map[State]*transitionDef {
+	index := make(map[Event]map[State]*transitionDef)
+	for _, t := range transitions {
+		if index[t.event] == nil {
+			index[t.event] = make(map[State]*transitionDef)
+		}
+		for _, from := range t.from {
+			index[t.event][from] = t
+		}
+	}
+	return index
 }
 
 // BeforeTransition registers a hook called before every transition (before guards run).
@@ -360,20 +379,14 @@ func (f *FSM) Trigger(ctx context.Context, event Event) error {
 // findTransition looks up the matching transition for the given state and event.
 // Caller must hold at least a read lock.
 func (f *FSM) findTransition(state State, event Event) (*transitionDef, error) {
-	eventKnown := false
-	for _, t := range f.def.transitions {
-		if t.event != event {
-			continue
-		}
-		eventKnown = true
-		for _, from := range t.from {
-			if from == state {
-				return t, nil
-			}
-		}
-	}
+	// O(1) lookup via pre-built index
+	stateMap, eventKnown := f.def.index[event]
 	if !eventKnown {
 		return nil, &ErrUnknownEvent{Event: event}
 	}
-	return nil, &ErrInvalidTransition{From: state, Event: event}
+	trans, validTransition := stateMap[state]
+	if !validTransition {
+		return nil, &ErrInvalidTransition{From: state, Event: event}
+	}
+	return trans, nil
 }
